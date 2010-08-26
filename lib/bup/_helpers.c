@@ -62,7 +62,7 @@ static PyObject *bitmatch(PyObject *self, PyObject *args)
 
 static PyObject *firstword(PyObject *self, PyObject *args)
 {
-    unsigned char *buf = NULL;
+    unsigned char *buf = NULL, tbuf[4];
     int len = 0;
     uint32_t v;
 
@@ -70,7 +70,11 @@ static PyObject *firstword(PyObject *self, PyObject *args)
 	return NULL;
     
     if (len < 4)
-	return NULL;
+    {
+	memset(tbuf, 0, sizeof(tbuf));
+	memcpy(tbuf, buf, len);
+	buf = tbuf;
+    }
     
     v = ntohl(*(uint32_t *)buf);
     return Py_BuildValue("I", v);
@@ -79,7 +83,7 @@ static PyObject *firstword(PyObject *self, PyObject *args)
 
 static PyObject *extract_bits(PyObject *self, PyObject *args)
 {
-    unsigned char *buf = NULL;
+    unsigned char *buf = NULL, tbuf[4];
     int len = 0, nbits = 0;
     uint32_t v, mask;
 
@@ -87,7 +91,11 @@ static PyObject *extract_bits(PyObject *self, PyObject *args)
 	return NULL;
     
     if (len < 4)
-	return NULL;
+    {
+	memset(tbuf, 0, sizeof(tbuf));
+	memcpy(tbuf, buf, len);
+	buf = tbuf;
+    }
     
     mask = (1<<nbits) - 1;
     v = ntohl(*(uint32_t *)buf);

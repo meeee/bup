@@ -3,8 +3,10 @@ import sys, math, struct, glob
 from bup import options, git
 from bup.helpers import *
 
+PRE_BYTES = git.PRE_BYTES
+POST_BYTES = git.POST_BYTES
 PAGE_SIZE=4096
-SHA_PER_PAGE=PAGE_SIZE/20.
+SHA_PER_PAGE=PAGE_SIZE*1.0/PRE_BYTES
 
 
 def merge(idxlist, bits, table):
@@ -38,7 +40,7 @@ def do_midx(outdir, outfilename, infilenames):
     pages = int(total/SHA_PER_PAGE) or 1
     bits = int(math.ceil(math.log(pages, 2)))
     entries = 2**bits
-    log('Table size: %d (%d bits)\n' % (entries*4, bits))
+    log('Table size: %d entries (%d bits)\n' % (entries*4, bits))
     
     table = [0]*entries
 
@@ -47,14 +49,36 @@ def do_midx(outdir, outfilename, infilenames):
     except OSError:
         pass
     f = open(outfilename + '.tmp', 'w+')
-    f.write('MIDX\0\0\0\2')
+    f.write('MIDX\0\0\0\3')
     f.write(struct.pack('!I', bits))
     assert(f.tell() == 12)
     f.write('\0'*4*entries)
+
+    # format:
+    #   header (12 bytes)
+    #   lookup table
+    #   prefixes
+    #   postfixes
+    #   file indexes
+    ofs_pre = f.tell()
+    ofs_post = ofs_pre + PRE_BYTES*total
+    ofs_which = ofs_post + POST_BYTES*total
+    ofs_end = ofs_which + 4*total
+
+    f.truncate(ofs_end)
+
+    map = mmap_readwrite(f, ofs_end, close=False)
     
-    for e in merge(inp, bits, table):
-        f.write(e)
-        
+    for i,e in enumerate(merge(inp, bits, table)):
+        map[ofs_pre + i*PRE_BYTES : ofs_pre + (i+1)*PRE_BYTES] \
+            = e[:PRE_BYTES]
+        map[ofs_post + i*POST_BYTES : ofs_post + (i+1)*POST_BYTES] \
+            = e[PRE_BYTES:]
+        # FIXME: set the file index block
+    map.flush()
+    map.close()
+
+    f.seek(ofs_end)
     f.write('\0'.join(os.path.basename(p) for p in infilenames))
 
     f.seek(12)

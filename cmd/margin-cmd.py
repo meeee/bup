@@ -7,8 +7,8 @@ from bup.helpers import *
 optspec = """
 bup margin
 --
-predict    Guess object offsets and report the maximum deviation
-ignore-midx  Don't use midx files; use only plain pack idx files.
+predict      guess object offsets and report the maximum deviation
+ignore-midx  with --predict, do each idx file separately
 """
 o = options.Options('bup margin', optspec)
 (opt, flags, extra) = o.parse(sys.argv[1:])
@@ -31,7 +31,8 @@ def do_predict(ix):
         maxdiff = max(maxdiff, abs(diff))
     print '%d of %d (%.3f%%) ' % (maxdiff, len(ix), maxdiff*100.0/len(ix))
     sys.stdout.flush()
-    assert(count+1 == len(ix))
+    if count+1 != len(ix):
+        raise Exception('wrong object count: %d != %d' % (count+1, len(ix)))
 
 if opt.predict:
     if opt.ignore_midx:
