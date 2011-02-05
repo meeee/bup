@@ -18,8 +18,14 @@ def linux_memstat():
             _linux_warned = 1
         return {}
     for line in f:
-        k,v = re.split(r':\s*', line.strip(), 1)
-        d[k] = v
+        # Note that on Solaris, this file exists but is binary.  If that
+        # happens, this split() might not return two elements.  We don't
+        # really need to care about the binary format since this output
+        # isn't used for much and report() can deal with missing entries.
+        t = re.split(r':\s*', line.strip(), 1)
+        if len(t) == 2:
+            k,v = t
+            d[k] = v
     return d
 
 
@@ -60,7 +66,7 @@ c,cycles=  number of cycles to run [100]
 ignore-midx  ignore .midx files, use only .idx files
 existing   test with existing objects instead of fake ones
 """
-o = options.Options('bup memtest', optspec)
+o = options.Options(optspec)
 (opt, flags, extra) = o.parse(sys.argv[1:])
 
 if extra:

@@ -4,12 +4,6 @@ from bup import options, git, index, drecurse
 from bup.helpers import *
 
 
-def merge_indexes(out, r1, r2):
-    for e in index.MergeIter([r1, r2]):
-        # FIXME: shouldn't we remove deleted entries eventually?  When?
-        out.add_ixentry(e)
-
-
 class IterHelper:
     def __init__(self, l):
         self.i = iter(l)
@@ -108,7 +102,11 @@ def update_index(top, excluded_paths):
                 log('check: before merging: newfile\n')
                 check_index(wr)
             mi = index.Writer(indexfile)
-            merge_indexes(mi, ri, wr)
+
+            for e in index.merge(ri, wr):
+                # FIXME: shouldn't we remove deleted entries eventually?  When?
+                mi.add_ixentry(e)
+
             ri.close()
             mi.close()
             wr.close()
@@ -135,7 +133,7 @@ exclude=   a path to exclude from the backup (can be used more than once)
 exclude-from= a file that contains exclude paths (can be used more than once)
 v,verbose  increase log output (can be used more than once)
 """
-o = options.Options('bup index', optspec)
+o = options.Options(optspec)
 (opt, flags, extra) = o.parse(sys.argv[1:])
 
 if not (opt.modified or opt['print'] or opt.status or opt.update or opt.check):

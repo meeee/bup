@@ -65,6 +65,7 @@ class Client:
         if is_reverse:
             self.pout = os.fdopen(3, 'rb')
             self.pin = os.fdopen(4, 'wb')
+            self.conn = Conn(self.pout, self.pin)
         else:
             if self.protocol in ('ssh', 'file'):
                 try:
@@ -72,14 +73,14 @@ class Client:
                     self.p = ssh.connect(self.host, self.port, 'server')
                     self.pout = self.p.stdout
                     self.pin = self.p.stdin
+                    self.conn = Conn(self.pout, self.pin)
                 except OSError, e:
                     raise ClientError, 'connect: %s' % e, sys.exc_info()[2]
             elif self.protocol == 'bup':
                 self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                self.sock.connect((self.host, self.port or 1982))
-                self.pout = self.sock.makefile('rb')
-                self.pin = self.sock.makefile('wb')
-        self.conn = Conn(self.pout, self.pin)
+                self.sock.connect((self.host, atoi(self.port) or 1982))
+                self.sockw = self.sock.makefile('wb')
+                self.conn = DemuxConn(self.sock.fileno(), self.sockw)
         if self.dir:
             self.dir = re.sub(r'[\r\n]', ' ', self.dir)
             if create:
@@ -101,10 +102,14 @@ class Client:
     def close(self):
         if self.conn and not self._busy:
             self.conn.write('quit\n')
-        if self.pin and self.pout:
+        if self.pin:
             self.pin.close()
-            while self.pout.read(65536):
-                pass
+        if self.sock and self.sockw:
+            self.sockw.close()
+            self.sock.shutdown(socket.SHUT_WR)
+        if self.conn:
+            self.conn.close()
+        if self.pout:
             self.pout.close()
         if self.sock:
             self.sock.close()
@@ -217,6 +222,7 @@ class Client:
         self.check_ok()
         if ob:
             self._busy = None
+        idx = None
         for idx in suggested:
             self.sync_index(idx)
         git.auto_midx(self.cachedir)
@@ -303,7 +309,7 @@ class PackWriter_Remote(git.PackWriter):
         return id
 
     def abort(self):
-        raise GitError("don't know how to abort remote pack writing")
+        raise ClientError("don't know how to abort remote pack writing")
 
     def _raw_write(self, datalist, sha):
         assert(self.file)
@@ -318,9 +324,12 @@ class PackWriter_Remote(git.PackWriter):
                           sha,
                           struct.pack('!I', crc),
                           data))
-        (self._bwcount, self._bwtime) = \
-            _raw_write_bwlimit(self.file, outbuf, self._bwcount, self._bwtime)
-        self.outbytes += len(data) - 20 - 4 # Don't count sha1+crc
+        try:
+            (self._bwcount, self._bwtime) = _raw_write_bwlimit(
+                    self.file, outbuf, self._bwcount, self._bwtime)
+        except IOError, e:
+            raise ClientError, e, sys.exc_info()[2]
+        self.outbytes += len(data)
         self.count += 1
 
         if self.file.has_input():

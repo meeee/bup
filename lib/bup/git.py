@@ -2,9 +2,9 @@
 bup repositories are in Git format. This library allows us to
 interact with the Git data structures.
 """
-import os, zlib, time, subprocess, struct, stat, re, tempfile, heapq
+import os, sys, zlib, time, subprocess, struct, stat, re, tempfile
 from bup.helpers import *
-from bup import _helpers
+from bup import _helpers, path
 
 MIDX_VERSION = 2
 
@@ -39,9 +39,13 @@ def repo(sub = ''):
 
 
 def auto_midx(objdir):
-    main_exe = os.environ.get('BUP_MAIN_EXE') or sys.argv[0]
-    args = [main_exe, 'midx', '--auto', '--dir', objdir]
-    rv = subprocess.call(args, stdout=open('/dev/null', 'w'))
+    args = [path.exe(), 'midx', '--auto', '--dir', objdir]
+    try:
+        rv = subprocess.call(args, stdout=open('/dev/null', 'w'))
+    except OSError, e:
+        # make sure 'args' gets printed to help with debugging
+        add_error('%r: exception: %s' % (args, e))
+        raise
     if rv:
         add_error('%r: returned %d' % (args, rv))
 
@@ -496,28 +500,13 @@ def open_idx(filename):
 
 def idxmerge(idxlist, final_progress=True):
     """Generate a list of all the objects reachable in a PackIdxList."""
-    total = sum(len(i) for i in idxlist)
-    iters = (iter(i) for i in idxlist)
-    heap = [(next(it), it) for it in iters]
-    heapq.heapify(heap)
-    count = 0
-    last = None
-    while heap:
-        if (count % 10024) == 0:
-            progress('Reading indexes: %.2f%% (%d/%d)\r'
-                     % (count*100.0/total, count, total))
-        (e, it) = heap[0]
-        if e != last:
-            yield e
-            last = e
-        count += 1
-        e = next(it)
-        if e:
-            heapq.heapreplace(heap, (e, it))
-        else:
-            heapq.heappop(heap)
-    if final_progress:
-        log('Reading indexes: %.2f%% (%d/%d), done.\n' % (100, total, total))
+    def pfunc(count, total):
+        progress('Reading indexes: %.2f%% (%d/%d)\r'
+                 % (count*100.0/total, count, total))
+    def pfinal(count, total):
+        if final_progress:
+            log('Reading indexes: %.2f%% (%d/%d), done.\n' % (100, total, total))
+    return merge_iter(idxlist, 10024, pfunc, pfinal)
 
 
 def _make_objcache():
@@ -557,7 +546,10 @@ class PackWriter:
         # to our hashsplit algorithm.)  f.write() does its own buffering,
         # but that's okay because we'll flush it in _end().
         oneblob = ''.join(datalist)
-        f.write(oneblob)
+        try:
+            f.write(oneblob)
+        except IOError, e:
+            raise GitError, e, sys.exc_info()[2]
         nw = len(oneblob)
         crc = zlib.crc32(oneblob) & 0xffffffff
         self._update_idx(sha, crc, nw)
@@ -862,7 +854,10 @@ def guess_repo(path=None):
 def init_repo(path=None):
     """Create the Git bare repository for bup in a given path."""
     guess_repo(path)
-    d = repo()
+    d = repo()  # appends a / to the path
+    parent = os.path.dirname(os.path.dirname(d))
+    if parent and not os.path.exists(parent):
+        raise GitError('parent directory "%s" does not exist\n' % parent)
     if os.path.exists(d) and not os.path.isdir(os.path.join(d, '.')):
         raise GitError('"%d" exists but is not a directory\n' % d)
     p = subprocess.Popen(['git', '--bare', 'init'], stdout=sys.stderr,

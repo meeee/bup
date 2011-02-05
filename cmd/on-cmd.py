@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 import sys, os, struct, getopt, subprocess, signal
-from bup import options, ssh
+from bup import options, ssh, path
 from bup.helpers import *
 
 optspec = """
@@ -8,7 +8,7 @@ bup on <hostname> index ...
 bup on <hostname> save ...
 bup on <hostname> split ...
 """
-o = options.Options('bup on', optspec, optfunc=getopt.getopt)
+o = options.Options(optspec, optfunc=getopt.getopt)
 (opt, flags, extra) = o.parse(sys.argv[1:])
 if len(extra) < 2:
     o.fatal('arguments expected')
@@ -41,9 +41,8 @@ try:
     p.stdin.write(struct.pack('!I', len(argvs)) + argvs)
     p.stdin.flush()
 
-    main_exe = os.environ.get('BUP_MAIN_EXE') or sys.argv[0]
-    sp = subprocess.Popen([main_exe, 'server'], stdin=p.stdout, stdout=p.stdin)
-
+    sp = subprocess.Popen([path.exe(), 'server'],
+                          stdin=p.stdout, stdout=p.stdin)
     p.stdin.close()
     p.stdout.close()
 
