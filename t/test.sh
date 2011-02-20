@@ -140,6 +140,21 @@ WVPASS bup split --bench -b <t/testfile1 >tags1.tmp
 WVPASS bup split -vvvv -b t/testfile2 >tags2.tmp
 WVPASS bup margin
 WVPASS bup midx -f
+WVPASS bup midx --check -a
+WVPASS bup midx -o $BUP_DIR/objects/pack/test1.midx \
+	$BUP_DIR/objects/pack/*.idx
+WVPASS bup midx --check -a
+WVPASS bup midx -o $BUP_DIR/objects/pack/test1.midx \
+	$BUP_DIR/objects/pack/*.idx \
+	$BUP_DIR/objects/pack/*.idx
+WVPASS bup midx --check -a
+all=$(echo $BUP_DIR/objects/pack/*.idx $BUP_DIR/objects/pack/*.midx)
+WVPASS bup midx -o $BUP_DIR/objects/pack/zzz.midx $all
+bup tick
+WVPASS bup midx -o $BUP_DIR/objects/pack/yyy.midx $all
+WVPASS bup midx -a
+WVPASSEQ "$(echo $BUP_DIR/objects/pack/*.midx)" \
+	"$BUP_DIR/objects/pack/yyy.midx"
 WVPASS bup margin
 WVPASS bup split -t t/testfile2 >tags2t.tmp
 WVPASS bup split -t t/testfile2 --fanout 3 >tags2tf.tmp
@@ -160,6 +175,17 @@ WVFAIL diff tags2t.tmp tags2tf.tmp
 wc -c t/testfile1 t/testfile2
 wc -l tags1.tmp tags2.tmp
 
+WVSTART "bloom"
+WVPASS bup bloom -c $(ls -1 $BUP_DIR/objects/pack/*.idx|head -n1)
+rm $BUP_DIR/objects/pack/bup.bloom
+WVPASS bup bloom -k 4
+WVPASS bup bloom -c $(ls -1 $BUP_DIR/objects/pack/*.idx|head -n1)
+WVPASS bup bloom -d buptest.tmp/objects/pack --ruin --force
+WVFAIL bup bloom -c $(ls -1 $BUP_DIR/objects/pack/*.idx|head -n1)
+WVPASS bup bloom --force -k 5
+WVPASS bup bloom -c $(ls -1 $BUP_DIR/objects/pack/*.idx|head -n1)
+
+WVSTART "memtest"
 WVPASS bup memtest -c1 -n100
 WVPASS bup memtest -c1 -n100 --existing
 
